@@ -50,7 +50,7 @@ hn_rndis_rid(struct hn_data *hv)
 #define size_to_num_pages(size) \
 	(ALIGN_UP((unsigned long)(size), __PAGE_SIZE) / __PAGE_SIZE)
 
-static void *hn_rndis_alloc(size_t size)
+static void *hn_rndis_alloc(struct uk_alloc *a, size_t size)
 {
 	// return rte_zmalloc("RNDIS", size, rte_mem_page_size());
 	//unsigned long num_pages;
@@ -58,18 +58,18 @@ static void *hn_rndis_alloc(size_t size)
 	// TODO: Allocate the exact size, PAGE_SIZE aligned.
 	//uk_pr_info("[hn_rndis_alloc] size: %d, num_pages: %d\n", size, num_pages);
 	//void *ptr =  uk_palloc(uk_alloc_get_default(), num_pages);
-	void *ptr = uk_memalign(uk_alloc_get_default(), __PAGE_SIZE, size);
+	void *ptr = uk_memalign(a, __PAGE_SIZE, size);
 	uk_pr_info("[%s] ptr: %p, size: %lu\n", __func__, ptr, size);
 	return ptr;
 }
 
-static void hn_rndis_free(void *ptr, size_t size)
+static void hn_rndis_free(struct uk_alloc *a, void *ptr, size_t size)
 {
 	// return rte_zmalloc("RNDIS", size, rte_mem_page_size());
 	//unsigned long num_pages;
 	//num_pages = size_to_num_pages(size);
 	// TODO: Allocate the exact size, PAGE_SIZE aligned.
-	uk_free(uk_alloc_get_default(), ptr);
+	uk_free(a, ptr);
 }
 
 #ifdef RTE_LIBRTE_NETVSC_DEBUG_DUMP
@@ -502,7 +502,7 @@ static int hn_rndis_execute(struct hn_data *hv, uint32_t rid,
 	return 0;
 }
 
-#define USE_DYNAMIC_ALLOC 0
+#define USE_DYNAMIC_ALLOC 1
 #if !USE_DYNAMIC_ALLOC
 uint8_t buf1[4096] __align(4096);
 uint8_t buf2[4096] __align(4096);
@@ -526,7 +526,7 @@ hn_rndis_query(struct hn_data *hv, uint32_t oid,
 	// void *dummyptr = hn_rndis_alloc(reqlen);
 	// memset(dummyptr, 0, reqlen);
 #if USE_DYNAMIC_ALLOC
-	void *buf1 = hn_rndis_alloc(reqlen);
+	void *buf1 = hn_rndis_alloc(hv->a, reqlen);
 	memset(buf1, 0, reqlen);
 #endif
 	req = (struct rndis_query_req *)buf1;
@@ -541,7 +541,7 @@ hn_rndis_query(struct hn_data *hv, uint32_t oid,
 	// void *dummyptr2 = hn_rndis_alloc(comp_len);
 	// memset(dummyptr2, 0, reqlen);
 #if USE_DYNAMIC_ALLOC
-	void *buf2 = hn_rndis_alloc(comp_len);
+	void *buf2 = hn_rndis_alloc(hv->a, comp_len);
 	memset(buf2, 0, reqlen);
 #endif
 	comp = (struct rndis_query_comp *)buf2;
@@ -608,16 +608,16 @@ hn_rndis_query(struct hn_data *hv, uint32_t oid,
 done:
 	uk_pr_info("[%s] before uk_free\n", __func__);
 	// rte_free(comp);
-	// hn_rndis_free(comp, comp_len);
+	// hn_rndis_free(hv->a, comp, comp_len);
 	// hn_rndis_free(dummyptr2, comp_len);
 #if USE_DYNAMIC_ALLOC
-	hn_rndis_free(buf1, comp_len);
+	hn_rndis_free(hv->a, buf1, comp_len);
 #endif
 	// rte_free(req);
-	// hn_rndis_free(req, reqlen);
+	// hn_rndis_free(hv->a, req, reqlen);
 	// hn_rndis_free(dummyptr, reqlen);
 #if USE_DYNAMIC_ALLOC
-	hn_rndis_free(buf2, reqlen);
+	hn_rndis_free(hv->a, buf2, reqlen);
 #endif
 	uk_pr_info("[%s] end error: %d\n", __func__, error);
 	return error;
@@ -628,7 +628,7 @@ hn_rndis_halt(struct hn_data *hv)
 {
 	struct rndis_halt_req *halt;
 
-	halt = hn_rndis_alloc(sizeof(*halt));
+	halt = hn_rndis_alloc(hv->a, sizeof(*halt));
 	if (halt == NULL)
 		return -ENOMEM;
 
@@ -640,7 +640,7 @@ hn_rndis_halt(struct hn_data *hv)
 	hn_rndis_exec1(hv, halt, sizeof(*halt), NULL, 0);
 
 	// rte_free(halt);
-	uk_free(uk_alloc_get_default(), halt);
+	uk_free(hv->a, halt);
 
 	uk_pr_debug("RNDIS halt done");
 	return 0;
@@ -815,6 +815,11 @@ hn_rndis_query_hwcaps(struct hn_data *hv, struct ndis_offload *caps)
 // 	return 0;
 // }
 
+#if !USE_DYNAMIC_ALLOC
+uint8_t buf3[4096] __align(4096);
+uint8_t buf4[4096] __align(4096);
+#endif
+
 static int
 hn_rndis_set(struct hn_data *hv, uint32_t oid, const void *data, uint32_t dlen)
 {
@@ -828,9 +833,15 @@ hn_rndis_set(struct hn_data *hv, uint32_t oid, const void *data, uint32_t dlen)
 
 	reqlen = sizeof(*req) + dlen;
 	// req = rte_zmalloc("RNDIS_SET", reqlen, rte_mem_page_size());
-	req = hn_rndis_alloc(reqlen);
+#if USE_DYNAMIC_ALLOC
+	req = hn_rndis_alloc(hv->a, reqlen);
 	if (!req)
 		return -ENOMEM;
+	memset(req, 0, reqlen);
+#else
+	memset(buf3, 0, reqlen);
+	req = (struct rndis_set_req *) buf3;
+#endif
 
 	rid = hn_rndis_rid(hv);
 	req->type = RNDIS_SET_MSG;
@@ -864,7 +875,9 @@ hn_rndis_set(struct hn_data *hv, uint32_t oid, const void *data, uint32_t dlen)
 
 done:
 	// rte_free(req);
-	uk_free(uk_alloc_get_default(), req);
+#if USE_DYNAMIC_ALLOC
+	uk_free(hv->a, req);
+#endif
 	uk_pr_debug("[%s] hn_rndis_set end error: %d\n", __func__, error);
 	return error;
 }
@@ -1140,7 +1153,7 @@ static int hn_rndis_init(struct hn_data *hv)
 	uk_pr_info("[%s] begin\n", __func__);
 	uk_pr_info("[%s] ch_id: %u\n", __func__, hv->primary->chan->ch_id);
 
-	req = hn_rndis_alloc(sizeof(*req));
+	req = hn_rndis_alloc(hv->a, sizeof(*req));
 	if (!req) {
 		uk_pr_err("no memory for RNDIS init");
 		return -ENXIO;
@@ -1196,7 +1209,7 @@ static int hn_rndis_init(struct hn_data *hv)
 	uk_pr_info("[%s] end error: %d\n", __func__, error);
 done:
 	// rte_free(req);
-	uk_free(uk_alloc_get_default(), req);
+	uk_free(hv->a, req);
 	return error;
 }
 

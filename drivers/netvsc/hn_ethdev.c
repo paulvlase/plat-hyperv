@@ -1486,7 +1486,7 @@ static struct uk_netdev_tx_queue *hn_dev_txq_setup(struct uk_netdev *n,
 
 	// txq->tx_rndis_pool = uk_allocpool_alloc(uk_alloc_get_default(), 16, sizeof(struct rndis_packet_msg),
     //                       HN_RNDIS_PKT_ALIGNED);
-	txq->tx_rndis_pool = uk_allocpool_alloc(uk_alloc_get_default(), 16, HN_RNDIS_PKT_ALIGNED,
+	txq->tx_rndis_pool = uk_allocpool_alloc(hv->a, 16, HN_RNDIS_PKT_ALIGNED,
                           HN_RNDIS_PKT_ALIGNED);
 	if (txq->tx_rndis_pool == NULL) {
 // 		PMD_DRV_LOG(ERR,
@@ -1500,7 +1500,7 @@ static struct uk_netdev_tx_queue *hn_dev_txq_setup(struct uk_netdev *n,
 	// 				      0, 0, NULL, NULL,
 	// 				      hn_txd_init, txq,
 	// 				      dev->device->numa_node, 0);
-	txq->txdesc_pool = uk_allocpool_alloc(uk_alloc_get_default(), 16, sizeof(struct hn_txdesc),
+	txq->txdesc_pool = uk_allocpool_alloc(hv->a, 16, sizeof(struct hn_txdesc),
                           netdev_info.ioalign);
 	if (txq->txdesc_pool == NULL) {
 // 		PMD_DRV_LOG(ERR,
@@ -1530,6 +1530,7 @@ static struct uk_netdev_rx_queue *hn_dev_rxq_setup(struct uk_netdev *n,
 {
 	int rc;
 	struct hn_dev *hndev;
+	struct hn_data *hv;
 	struct uk_netdev_rx_queue *rxq;
 	// netif_rx_sring_t *sring;
 
@@ -1539,6 +1540,8 @@ static struct uk_netdev_rx_queue *hn_dev_rxq_setup(struct uk_netdev *n,
 	UK_ASSERT(conf != NULL);
 
 	hndev = to_hn_dev(n);
+	hv = hndev->dev_private;
+
 	if (queue_id >= hndev->max_queue_pairs) {
 		uk_pr_err("Invalid queue identifier: %"__PRIu16"\n", queue_id);
 		return ERR2PTR(-EINVAL);
@@ -1598,10 +1601,10 @@ static struct uk_netdev_rx_queue *hn_dev_rxq_setup(struct uk_netdev *n,
 	rxq->event_sz = HN_RXQ_EVENT_DEFAULT;
 	// rxq->event_buf = rte_malloc_socket("HN_EVENTS", HN_RXQ_EVENT_DEFAULT,
 	// 				   RTE_CACHE_LINE_SIZE, socket_id);
-	rxq->event_buf = uk_malloc(uk_alloc_get_default(), HN_RXQ_EVENT_DEFAULT);
+	rxq->event_buf = uk_malloc(hv->a, HN_RXQ_EVENT_DEFAULT);
 	if (!rxq->event_buf) {
 		// rte_free(rxq);
-		uk_free(uk_alloc_get_default(), rxq->event_buf);
+		// uk_free(hv->a, rxq->event_buf);
 		return NULL;
 	}
 
@@ -2158,7 +2161,7 @@ static int hn_drv_add_dev(struct vmbus_device *vmbusdev)
 	hndev->uid = rc;	
 	rc = 0;
 
-	// uk_pr_debug("[%s] end\n", __func__);
+	uk_pr_debug("[%s] end\n", __func__);
 out:
 	return rc;
 err_register:

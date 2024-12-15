@@ -108,7 +108,8 @@ void *hyperv_mem_alloc(struct uk_alloc *a, size_t size)
 	unsigned long num_pages;
 	num_pages = size_to_num_pages(size);
 	// TODO: Allocate the exact size, PAGE_SIZE aligned.
-	void *ptr = uk_palloc(a, num_pages);
+	//void *ptr = uk_palloc(a, num_pages);
+	void *ptr = uk_memalign(a, __PAGE_SIZE, size);
 	// uk_pr_debug("[%s] ptr: %p\n", __func__, ptr);
 	return ptr;
 }
@@ -128,7 +129,7 @@ hyperv_tc64_rdmsr(void)
 uint64_t
 hypercall_post_message(bus_addr_t msg_paddr)
 {
-	uk_pr_info("hypercall_post_message hypercall_context.hc_addr: %p, msg_paddr: %lx\n", hypercall_context.hc_addr, msg_paddr);
+	//uk_pr_info("hypercall_post_message hypercall_context.hc_addr: %p, msg_paddr: %lx\n", hypercall_context.hc_addr, msg_paddr);
 	return hypercall_md(hypercall_context.hc_addr,
 	    HYPERCALL_POST_MESSAGE, msg_paddr, 0);
 }
